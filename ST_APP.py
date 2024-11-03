@@ -1,119 +1,123 @@
-#connect sql
-import psycopg2
+import streamlit as st
 import pandas as pd
-import numpy as np
+import psycopg2
+#import re
 
-#psycopg2: Used to connect and interact with a PostgreSQL database.
-#pandas: For data manipulation and analysis.
-#numpy: For numerical operations, including handling missing values (`NaN`).
+#from datetime import datetime
 
-# Load the existing CSV into DataFrames
-df1 = pd.read_csv("Rajasthan.csv")
-df2 = pd.read_csv("Telungana.csv")
-df3 = pd.read_csv("Kadamba.csv")
-df4 = pd.read_csv("West_Bengal.csv")  
-df5 = pd.read_csv("Uttar_Pradesh.csv")
-
-df6=pd.read_csv('Chandigarh.csv')
-df6['State_Name']='Chandigarh'
-df6.to_csv('Chandigarh.csv',index=False)
-
-df7 = pd.read_csv("Bihar.csv")
-
-df8 = pd.read_csv("Andra.csv")
-df8['State_Name']='Andra pradesh'
-df8.to_csv('Andra.csv',index=False)
-
-df9 = pd.read_csv("Assam.csv")
-df9['State_Name']='Assam'
-df9.to_csv('Assam.csv',index=False)
-
-df10 = pd.read_csv("Kerala.csv")
-df11 = pd.read_csv("Haryana.csv")
-
-# Concatenate all DataFrames
-df = pd.concat([df1, df2, df3, df4, df5, df6, df7, df8, df9, df10, df11], ignore_index=True)
-
-# Clean up the Price column
-df["Price"] = df["Price"].str.replace("INR", "")# Remove "INR" from Price column
-df["Price"] = pd.to_numeric(df["Price"], errors="coerce")# Convert Price to numeric
-df["Price"].fillna(0, inplace=False)  #  Fill missing Price values with 0
-
-# Clean up the Star Rating column (if necessary)
-df["Star_Rating"] = pd.to_numeric(df["Star_Rating"], errors="coerce")# to numeric
-df["Star_Rating"].fillna(0, inplace=False)  #  Fill missing Price values with 0
-
-# Replacing NaN values with None (for PostgreSQL compatibility)
-df = df.replace({np.nan: None})
-
-# Save the cleaned DataFrame to CSV
-df.to_csv("Busdetails.csv", index=False)
-
-# Database setup for PostgreSQL
-def conn_dbsetup():
+# Function to fetch bus details from PostgreSQL
+def fetch_bus_details():
     conn = psycopg2.connect(
         host="localhost",
         database="projectdb",
         user="postgres",
         password="qwertyuiop"
     )
-    cursor = conn.cursor()
-
-    # Create table for bus details if it doesn't already exist
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS red_bus (
-            id SERIAL PRIMARY KEY,
-            state TEXT,
-            route_name TEXT,
-            route_link TEXT,
-            bus_name TEXT,
-            bus_type TEXT,
-            departing_time VARCHAR(100),
-            duration TEXT,
-            reaching_time VARCHAR(100),
-            star_rating FLOAT,
-            price FLOAT,
-            seat_availability INT
-        )
-    ''')
-
-    conn.commit()
-    return conn, cursor
-
-# Insert DataFrame data into the PostgreSQL database
-def insertingtodb(conn, cursor, df):
-    for _, row in df.iterrows():
-        cursor.execute('''
-            INSERT INTO red_bus
-            (state,route_name, route_link, bus_name, bus_type, departing_time, duration, reaching_time, star_rating, price, seat_availability)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-        ''', (
-            row['State_Name'],
-            row['Route_Name'],
-            row['Route_Link'],
-            row['Bus_Name'],
-            row['Bus_Type'],
-            row['Departure'],
-            row['Duration'],
-            row['Arrival'],
-            row['Star_Rating'],  
-            row['Price'], 
-            int(row['Seat_Availability']) if str(row['Seat_Availability']).isdigit() else 0
-        ))#`Seat_Availability` is converted to an integer or `0` if it's not a valid number.
-
-    conn.commit()
-
-# Example of calling the functions
-def sqlcsv():
-    # Set up the PostgreSQL database
-    conn, cursor =conn_dbsetup()
-
-    # Insert the data from DataFrame into the PostgreSQL database
-    insertingtodb(conn, cursor, df)
-
-    # Close the connection
-    cursor.close()
+    query = "SELECT * FROM red_bus"
+    df = pd.read_sql(query, conn)
     conn.close()
+    return df
 
-# Run the function to load data into PostgreSQL
-sqlcsv()
+def convert_to_time(time_str):
+    if pd.isnull(time_str):
+        return None
+    try:
+        time_str = time_str.strip()
+        return pd.to_datetime(time_str, format='%H:%M').time()  # Handles "HH:MM" format
+    except ValueError:
+        return None
+
+
+# Main Streamlit application
+def main():
+    st.title("Bus Routes from RedBus")
+    st.image("logo.png",width=1000)
+
+    st.markdown("<h1 style='text-align: center;'>State Road Transport Corporation (SRTC) of India</h1>", unsafe_allow_html=True)
+
+    # Fetching bus details
+    df = fetch_bus_details()
+
+    df['departing_time'] = df['departing_time'].apply(lambda x: convert_to_time(x))
+
+   
+
+    # Display the data
+    st.subheader("Available Bus Routes")
+    st.write("Here are the available bus routes:")
+    
+    # Filters
+    st.sidebar.header("Filters")
+
+    if 'state' in df.columns:
+        state = df['state'].unique().tolist()
+        selected_state = st.sidebar.selectbox("Select State", state)
+    else:
+        st.warning("State column is missing in the data.")
+
+  
+
+    route_names  = df[df['state'] == selected_state]['route_name'].unique()
+    selected_route = st.sidebar.selectbox("Select Route", route_names  )
+
+
+  
+
+    # Filter 3: Star Rating Filter
+    if 'star_rating' in df.columns:
+        min_rating = float(df['star_rating'].min())
+        max_rating = float(df['star_rating'].max())
+        rating_range = st.sidebar.slider("Select Star Rating", min_value=min_rating, max_value=max_rating, step=0.1, value=(min_rating, max_rating))
+        df = df[(df['star_rating'] >= rating_range[0]) & (df['star_rating'] <= rating_range[1])]
+
+
+        min_price = None
+        max_price = None
+   
+    if 'price' in df.columns:
+        min_price = float(df['price'].min())
+        max_price = float(df['price'].max())
+        price_range = st.slider("Select Price Range", min_value=min_price, max_value=max_price, value=(min_price, max_price))
+        df = df[(df['price'] >= price_range[0]) & (df['price'] <= price_range[1])]
+
+   
+
+
+
+    min_departure_time = st.sidebar.time_input("Min Departure Time", value=pd.to_datetime("00:00").time())
+    max_departure_time = st.sidebar.time_input("Max Departure Time", value=pd.to_datetime("23:59").time())
+
+    availability_options = ['Available', 'Not Available']
+    selected_availability = st.sidebar.selectbox("Seat Availability", availability_options)
+
+    
+
+    # Applying filters
+    filtered_df = df[
+        (df['state'] == selected_state)&
+        (df['route_name'] == selected_route) &
+        (df['price'] >= min_price) &
+        (df['price'] <= max_price) &
+        (df['star_rating'] >= min_rating) &
+        (df['departing_time'] >= min_departure_time) &
+        (df['departing_time'] <= max_departure_time) &
+        ((df['seat_availability'] >= 0) if selected_availability == 'Available' 
+             else (df['seat_availability'] == 0))
+    ]
+
+    if filtered_df.empty:
+        st.write("No results found based on the selected filters.")
+    else:
+        st.dataframe(filtered_df)
+
+        # Allow downloading the filtered results
+        csv = filtered_df.to_csv(index=False).encode('utf-8')
+        st.download_button(
+            label="Download data as CSV",
+            data=csv,
+            file_name='filtered_bus_details.csv',
+            mime='text/csv'
+        )
+
+if __name__ == "__main__":
+    main()
