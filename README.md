@@ -44,9 +44,11 @@ By automating this process, transportation businesses can leverage data insights
 ### 1. Data Scraping
 - Use **Selenium** to extract bus information from the Redbus website, including:
   - Bus routes
+  - Bus types
   - Schedules
   - Prices
   - Seat availability
+  - Ratings
 
 ### 2. Data Storage
 - Store the scraped data in a **SQL database** for structured analysis.
@@ -54,7 +56,7 @@ By automating this process, transportation businesses can leverage data insights
 ### 3. Streamlit Application
 - Develop a **Streamlit** application to allow users to:
   - View bus data
-  - Apply filters (bus type, route, price range, star rating, availability)
+  - Apply filters (state,bus type, route, price range, star rating,bus timing)
 
 ### 4. Data Analysis/Filtering
 - Implement **SQL queries** to filter data based on user input.
